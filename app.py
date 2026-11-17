@@ -1,6 +1,5 @@
 import os
 import sqlite3
-from contextlib import contextmanager
 from pathlib import Path
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
@@ -11,48 +10,41 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "local-development-key")
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", "data/students.db"))
 
 
-@contextmanager
-def get_db():
+def connect_db():
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
-    try:
-        yield connection
-        connection.commit()
-    finally:
-        connection.close()
+    return connection
 
 
 def initialize_db():
-    with get_db() as connection:
-        connection.execute(
-            """CREATE TABLE IF NOT EXISTS students (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                full_name TEXT NOT NULL,
-                email TEXT NOT NULL COLLATE NOCASE UNIQUE,
-                course TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )"""
-        )
+    connection = connect_db()
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            course TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )"""
+    )
+    connection.commit()
+    connection.close()
 
 
 @app.get("/")
 def index():
     query = request.args.get("q", "").strip()
-    with get_db() as connection:
-        if query:
-            pattern = f"%{query}%"
-            students = connection.execute(
-                """SELECT * FROM students
-                   WHERE full_name LIKE ? OR email LIKE ? OR course LIKE ?
-                   ORDER BY created_at DESC, id DESC""",
-                (pattern, pattern, pattern),
-            ).fetchall()
-        else:
-            students = connection.execute(
-                "SELECT * FROM students ORDER BY created_at DESC, id DESC"
-            ).fetchall()
-        total = connection.execute("SELECT COUNT(*) FROM students").fetchone()[0]
+    pattern = f"%{query}%"
+    connection = connect_db()
+    students = connection.execute(
+        """SELECT * FROM students
+           WHERE full_name LIKE ? OR email LIKE ? OR course LIKE ?
+           ORDER BY created_at DESC, id DESC""",
+        (pattern, pattern, pattern),
+    ).fetchall()
+    total = connection.execute("SELECT COUNT(*) FROM students").fetchone()[0]
+    connection.close()
     return render_template("index.html", students=students, query=query, total=total)
 
 
@@ -66,15 +58,18 @@ def register():
         flash("Please complete every field.", "error")
         return redirect(url_for("index"))
 
+    connection = connect_db()
     try:
-        with get_db() as connection:
-            connection.execute(
-                "INSERT INTO students (full_name, email, course) VALUES (?, ?, ?)",
-                (full_name, email, course),
-            )
+        connection.execute(
+            "INSERT INTO students (full_name, email, course) VALUES (?, ?, ?)",
+            (full_name, email, course),
+        )
+        connection.commit()
     except sqlite3.IntegrityError:
         flash("That email address is already registered.", "error")
         return redirect(url_for("index"))
+    finally:
+        connection.close()
 
     flash(f"{full_name} is registered.", "success")
     return redirect(url_for("index"))
@@ -82,20 +77,24 @@ def register():
 
 @app.post("/students/<int:student_id>/delete")
 def delete_student(student_id):
-    with get_db() as connection:
-        connection.execute("DELETE FROM students WHERE id = ?", (student_id,))
+    connection = connect_db()
+    connection.execute("DELETE FROM students WHERE id = ?", (student_id,))
+    connection.commit()
+    connection.close()
     flash("Registration removed.", "success")
     return redirect(url_for("index"))
 
 
 @app.get("/health")
 def health():
+    connection = connect_db()
     try:
-        with get_db() as connection:
-            connection.execute("SELECT 1")
+        connection.execute("SELECT 1")
         return jsonify(status="ok"), 200
     except sqlite3.Error:
         return jsonify(status="error"), 503
+    finally:
+        connection.close()
 
 
 initialize_db()
