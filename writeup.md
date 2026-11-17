@@ -6,10 +6,14 @@
 - Track the source code with Git and GitHub.
 
 ## Process
-- Created the app using Python, Flask, and SQLite.
-- Added a web form and a table to manage student registrations.
-- Added a Dockerfile and Docker Compose configuration.
-- Connected the local Git repository to GitHub.
+- Created the app using Python and Flask, with SQLite to store student details.
+- Built a form to enter each student's name, email, and course.
+- Added routes to register students, show and search the list, and delete a record.
+- Prevented empty fields and duplicate email addresses.
+- Created a Dockerfile to package the app and a Compose file to run it on port 5000.
+- Added a named Docker volume so the database remains after the container stops.
+- Started the container and checked the app page, health endpoint, and registration actions.
+- Initialized a Git repository, committed the source, and pushed it to GitHub.
 
 ## Basic Commands
 - Start the app: `docker compose up --build -d`
